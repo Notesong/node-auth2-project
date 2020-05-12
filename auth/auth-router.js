@@ -1,54 +1,59 @@
-const router = require("express").Router();
+const express = require("express");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
-const secrets = require("../config/secrets.js");
+const Users = require("../users/users-model");
 
-const Users = require("../users/users-model.js");
+const router = express.Router();
 
-router.post("/register", (req, res) => {
-  let user = req.body;
-  const hash = bcrypt.hashSync(user.password, 10);
-  user.password = hash;
+router.post("/register", async (req, res, next) => {
+  try {
+    const { username } = req.body;
+    const user = await Users.findBy({ username }).first();
 
-  Users.add(user)
-    .then((saved) => {
-      const token = genToken(saved);
-      res.status(201).json({ created_user: saved, token: token });
-    })
-    .catch((error) => {
-      res.status(500).json(error);
-    });
+    if (user) {
+      return res.status(409).json({
+        message: "Username is already taken",
+      });
+    }
+
+    res.status(201).json(await Users.add(req.body));
+  } catch (err) {
+    next(err);
+  }
 });
 
-router.post("/login", (req, res) => {
-  let { username, password } = req.body;
-
-  Users.findBy({ username })
-    .first()
-    .then((user) => {
-      if (user && bcrypt.compareSync(password, user.password)) {
-        const token = genToken(user);
-        res.status(200).json({ username: user.username, token: token });
-      } else {
-        res.status(401).json({ message: "Invalid Credentials" });
-      }
-    })
-    .catch((error) => {
-      res.status(500).json(error);
-    });
-});
-
-function genToken(user) {
-  const payload = {
-    userid: user.id,
-    username: user.username,
-    roles: ["EMPLOYEE"],
+router.post("/login", async (req, res, next) => {
+  const authError = {
+    message: "Invalid Credentials",
   };
 
-  const options = { expiresIn: "1h" };
-  const token = jwt.sign(payload, secrets.jwtSecret, options);
+  try {
+    const user = await Users.findBy({ username: req.body.username }).first();
+    if (!user) {
+      return res.status(401).json(authError);
+    }
 
-  return token;
-}
+    const passwordValid = await bcrypt.compare(
+      req.body.password,
+      user.password
+    );
+    if (!passwordValid) {
+      return res.status(401).json(authError);
+    }
+
+    const tokenPayload = {
+      userId: user.id,
+      userRole: "admin",
+    };
+
+    res.cookie("token", jwt.sign(tokenPayload, process.env.JWT_SECRET));
+
+    res.json({
+      message: `Welcome ${user.username}!`,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
 
 module.exports = router;

@@ -1,15 +1,15 @@
-const router = require("express").Router();
+const express = require("express");
+const Users = require("./users-model");
+const restrict = require("../middleware/restrict");
 
-const Users = require("./users-model.js");
-const restricted = require("../auth/restricted-middleware.js");
-const checkRole = require("../auth/check-role-middleware.js");
+const router = express.Router();
 
-router.get("/", restricted, checkRole("EMPLOYEE"), (req, res) => {
-  Users.find()
-    .then((users) => {
-      res.json(users);
-    })
-    .catch((err) => res.send(err));
+router.get("/", restrict("admin"), async (req, res, next) => {
+  try {
+    res.json(await Users.find());
+  } catch (err) {
+    next(err);
+  }
 });
 
 module.exports = router;
